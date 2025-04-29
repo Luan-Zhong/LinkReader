@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LinkReader</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #text-area { border: 1px solid #ccc; padding: 10px; min-height: 300px; }
+    .highlight { background-color: yellow; cursor: pointer; }
+    .toolbar { position: absolute; background: white; border: 1px solid #ccc; padding: 5px; display: none; z-index: 9999; }
+    .note-box { position: absolute; background: #f9f9f9; border: 1px solid #aaa; width: 200px; min-height: 50px; resize: both; overflow: auto; }
+    .note-header { background: #ddd; padding: 5px; cursor: move; display: flex; justify-content: space-between; align-items: center; }
+    .note-content { padding: 5px; min-height: 40px; }
+    .delete-btn { background: red; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 14px; line-height: 20px; text-align: center; cursor: pointer; }
+    #save-btn { margin-top: 20px; padding: 8px 16px; }
+  </style>
+</head>
+<body>
+
+<h1>LinkReader</h1>
+<div id="text-area" contenteditable="true">
+  
+</div>
+
+<button id="save-btn">Save as HTML</button>
+
+<div id="toolbar" class="toolbar"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/leader-line/leader-line.min.js"></script>
+<script>
+let currentSelection;
+let toolbar;
+let lines = [];
+
+function initialize() {
+  toolbar = document.getElementById('toolbar');
+  document.addEventListener('mouseup', handleMouseUp);
+  document.getElementById('save-btn').addEventListener('click', savePage);
+}
+
+function handleMouseUp() {
+  let selection = window.getSelection();
+  if (!selection.isCollapsed && selection.toString().trim() !== '') {
+    currentSelection = selection.getRangeAt(0);
+    let rect = currentSelection.getBoundingClientRect();
+    toolbar.style.top = window.scrollY + rect.bottom + 5 + 'px';
+    toolbar.style.left = window.scrollX + rect.left + 'px';
+    toolbar.innerHTML = '';
+
+    if (selection.anchorNode.parentElement.classList.contains('highlight')) {
+      let delBtn = document.createElement('button');
+      delBtn.textContent = 'Delete Highlight';
+      delBtn.onclick = deleteHighlight;
+      toolbar.appendChild(delBtn);
+    } else {
+      let addBtn = document.createElement('button');
+      addBtn.textContent = 'Add Note';
+      addBtn.onclick = createNote;
+      toolbar.appendChild(addBtn);
+    }
+
+    toolbar.style.display = 'block';
+  } else {
+    toolbar.style.display = 'none';
+  }
+}
+
+function deleteHighlight() {
+  if (!currentSelection) return;
+  let span = currentSelection.startContainer.parentElement;
+  if (span.classList.contains('highlight')) {
+    let related = lines.find(item => item.highlight === span);
+    if (related) {
+      related.line.remove();
+      related.noteBox.remove();
+      lines = lines.filter(item => item.highlight !== span);
+    }
+    span.replaceWith(document.createTextNode(span.innerText));
+    toolbar.style.display = 'none';
+  }
+}
+
+function createNote() {
+  if (!currentSelection) return;
+
+  let span = document.createElement('span');
+  span.className = 'highlight';
+  span.appendChild(currentSelection.extractContents());
+  currentSelection.insertNode(span);
+
+  let noteBox = document.createElement('div');
+  noteBox.className = 'note-box';
+
+  let header = document.createElement('div');
+  header.className = 'note-header';
+
+  let deleteBtn = document.createElement('button');
+  deleteBtn.className = 'delete-btn';
+  deleteBtn.innerText = '×';
+  header.appendChild(deleteBtn);
+
+  let content = document.createElement('div');
+  content.className = 'note-content';
+  content.contentEditable = 'true';
+
+  noteBox.appendChild(header);
+  noteBox.appendChild(content);
+  document.body.appendChild(noteBox);
+
+  noteBox.style.top = (window.scrollY + 100) + 'px';
+  noteBox.style.left = (window.scrollX + 300) + 'px';
+
+  let line = new LeaderLine(span, noteBox, { color: 'black', size: 2 });
+  lines.push({ highlight: span, noteBox: noteBox, line: line });
+
+  dragElement(noteBox, header, line);
+
+  deleteBtn.addEventListener('click', () => {
+    line.remove();
+    noteBox.remove();
+    span.replaceWith(document.createTextNode(span.innerText));
+    lines = lines.filter(item => item.line !== line);
+  });
+
+  toolbar.style.display = 'none';
+}
+
+function dragElement(elmnt, header, line) {
+  let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+  header.onmousedown = function(e) {
+    e.preventDefault();
+    pos3 = e.clientX;
+    pos4 = e.clientY;
+    document.onmouseup = closeDragElement;
+    document.onmousemove = function(e) {
+      e.preventDefault();
+      pos1 = pos3 - e.clientX;
+      pos2 = pos4 - e.clientY;
+      pos3 = e.clientX;
+      pos4 = e.clientY;
+      elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+      elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+      line.position();
+    }
+  };
+
+  function closeDragElement() {
+    document.onmouseup = null;
+    document.onmousemove = null;
+  }
+}
+
+function savePage() {
+  let fileName = prompt('Enter the file name:', 'LinkReader') || 'LinkReader';
+  document.title = fileName;
+  let notesHtml = lines.map(item => `<div class="note-box" style="top:${item.noteBox.style.top};left:${item.noteBox.style.left}">${item.noteBox.innerHTML}</div>`).join('');
+
+  const pageContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${fileName}</title>
+<link href="https://cdn.jsdelivr.net/npm/leader-line/leader-line.min.js" rel="stylesheet">
+<style>
+body { font-family: Arial, sans-serif; margin: 20px; }
+#text-area { border: 1px solid #ccc; padding: 10px; min-height: 300px; }
+.highlight { background-color: yellow; cursor: pointer; }
+.toolbar { position: absolute; background: white; border: 1px solid #ccc; padding: 5px; display: none; z-index: 9999; }
+.note-box { position: absolute; background: #f9f9f9; border: 1px solid #aaa; width: 200px; min-height: 50px; resize: both; overflow: auto; }
+.note-header { background: #ddd; padding: 5px; cursor: move; display: flex; justify-content: space-between; align-items: center; }
+.note-content { padding: 5px; min-height: 40px; }
+.delete-btn { background: red; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 14px; line-height: 20px; text-align: center; cursor: pointer; }
+#save-btn { margin-top: 20px; padding: 8px 16px; }
+</style>
+</head>
+<body>
+<h1>${fileName}</h1>
+<div id="text-area" contenteditable="true">${document.getElementById('text-area').innerHTML}</div>
+${notesHtml}
+<button id="save-btn">Save as HTML</button>
+<div id="toolbar" class="toolbar"></div>
+<script src="https://cdn.jsdelivr.net/npm/leader-line/leader-line.min.js"></script>
+<script>
+${initialize.toString()}
+${handleMouseUp.toString()}
+${deleteHighlight.toString()}
+${createNote.toString()}
+${dragElement.toString()}
+${savePage.toString()}
+initialize();
+</script>
+</body>
+</html>`;
+
+  let blob = new Blob([pageContent], { type: 'text/html' });
+  let a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName + '.html';
+  a.click();
+}
+
+initialize();
+</script>
+
+</body>
+</html>
